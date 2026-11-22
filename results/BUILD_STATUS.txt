@@ -1,0 +1,10 @@
+Verification status (2026-11-22)
+
+- Local (macOS, Python 3.13.6): 31 tests passed, 93% line coverage (see local_pytest_report.txt)
+- Local smoke test: uvicorn started; GET /health ok; POST /score on examples/luad_synthetic.json
+  returned relative_score 1.230866444; request with missing features returned HTTP 422
+- Upstream parity: tests/test_upstream_parity.py compares models.json with the upstream
+  compact_score_formula.yaml pinned at commit 2ef12c6; 5 cancers / 24 features match exactly
+- Continuous integration: GitHub Actions runs pytest on Python 3.11, 3.12, 3.13 and builds,
+  starts and smoke-tests the Docker Compose service (see the Actions tab for each run)
+- All example inputs are synthetic; no patient data is included

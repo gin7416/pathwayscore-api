@@ -1,0 +1,140 @@
+# Compact pathway-level risk score formula (5 cancers)
+# ------------------------------------------------------
+# Per-cancer fixed Cox proportional-hazards compact pathway score.
+# Coefficients (beta) were estimated on the MSK-CHORD 2024 training split
+# and are applied without refitting or rescaling to internal MSK test sets
+# and the institutionally independent GENIE BPC external cohorts.
+#
+# Score definition (paper "compact pathway score" / Supp Table S3)
+#   score(s)            = exp( sum_k ( beta_k * x_k(s) ) )      # = "partial hazard"
+#   risk_group(s)       = 1 if score(s) > msk_partial_hazard_cutoff[cancer]
+#                         else 0
+#
+# File contents and standardization source
+#   Fixed beta coefficients, K_c per cancer, transform tags, and
+#   MSK-derived partial-hazard cutoffs are stored in THIS file
+#   (compact_score/compact_score_formula.yaml).
+#   MSK-derived z-score mu/sigma parameters for each `zscore_msk_train`
+#   feature are embedded inline as `zscore_mean` and `zscore_std` under
+#   the corresponding feature entry in this file. They are applied
+#   unchanged to MSK held-out test and to GENIE BPC.
+#
+# Feature definitions (per pathway P, gene-set G_P, sample s)
+#   PW_<P>_amp_hit        binary, 1 if any gene in G_P has CNA >= +2 in s
+#   PW_<P>_del_hit        binary, 1 if any gene in G_P has CNA <= -2 in s
+#   PW_<P>_sv_hit         binary, 1 if any gene in G_P has structural variant in s
+#   PW_<P>_mut_rate_raw   |{nonsilent-mutated genes in G_P in s}| / |G_P_covered|
+#   PW_<P>_any_rate_raw   |{mut or amp or del genes in G_P in s}|  / |G_P_covered|
+#   PW_<P>_mut_rate_z     z-score of mut_rate_raw using MSK train mu/sigma
+#   PW_<P>_any_rate_z     z-score of any_rate_raw using MSK train mu/sigma
+#   PW_<P>_zsum           amp_hit + del_hit + sv_hit + mut_rate_z      (no further z-score)
+#   PW_HIT_COUNT(s)       integer count of pathways in hit_count_pathways[cancer]
+#                         with (mut_rate_raw > 0) or amp_hit or del_hit in s  (0..P_c, where P_c is the number of retained pathways for cancer c)
+#                         NOTE: PW_HIT_COUNT is the code-level identifier for the
+#                         global feature referred to in the manuscript as
+#                         "All-pathway alteration count". The PW_ prefix here is
+#                         a historical code convention and does NOT mean this
+#                         feature is per-pathway; it is a single integer per
+#                         patient summarizing how many of the retained pathways
+#                         are altered. Paper Methods, Supplementary Table S4
+#                         display name, and ibcga_run_records/ CSVs use the
+#                         reader-friendly form "All-pathway alteration count" /
+#                         "All_Pathway_Alteration_Count" for this same feature.
+#
+# Per-feature transform tags (used only as machine-readable hints)
+#   binary               : binary {0,1}, no standardization
+#   integer_count        : integer count, no standardization
+#   zscore_msk_train     : standardized with mu/sigma from MSK train CSV
+#   composite_no_zscore  : composite expression of other features, not z-scored
+#
+# Nonsilent variant classes (Variant_Classification in MAF):
+#   Missense_Mutation, Nonsense_Mutation, Frame_Shift_Ins, Frame_Shift_Del,
+#   In_Frame_Ins, In_Frame_Del, Splice_Site, Translation_Start_Site,
+#   Nonstop_Mutation, Splice_Region
+#
+# Pathway gene sets: TCGA 10-pathway list (Sanchez-Vega et al, Cell 2018),
+# augmented with internal DDR and Chromatin definitions
+# (see preprocessing/build_pathway_features.py).
+#
+# Cutoffs
+#   msk_partial_hazard_cutoff[cancer]
+#     scalar partial-hazard threshold derived on the MSK training split.
+#     Retained in the YAML as a deployment reference and for backward
+#     compatibility with apply_compact_score.py's risk_group_msk_cutoff
+#     column. The primary deployment-oriented analyses use cohort-internal
+#     rank thresholds (cohort median or top quartile) rather than this
+#     transplanted absolute cutoff; external calibration intercepts
+#     (Figure 5d, Table 3) indicate that absolute cutoffs derived on MSK
+#     do not transfer to institutionally independent cohorts without local
+#     baseline-hazard recalibration.
+
+score_definition: "score = exp(sum(beta_k * x_k))   # paper: compact pathway score (partial hazard)"
+standardization_source: "MSK-CHORD training split (zscore parameters embedded inline per zscore_msk_train feature)"
+
+# Cancer key alias
+# The manuscript writes "IDC" (invasive ductal breast carcinoma) for the
+# cohort whose YAML key here is "BRCA". The apply script accepts either
+# spelling; both resolve to the same feature set + coefficients.
+cancer_key_aliases:
+  IDC: BRCA
+
+cancers:
+  BRCA:
+    K: 5
+    hit_count_pathways: [TP53, PI3K, RTK_RAS, Cell_Cycle, Chromatin, DDR, MYC]
+    features:
+      - {name: PW_HIT_COUNT,           beta:  0.1287982419490632,   transform: integer_count, display: "All-pathway alteration count"}
+      - {name: PW_TP53_mut_rate_z,     beta:  0.19105694078532443,  transform: zscore_msk_train, display: "TP53 mutation rate (z)", zscore_mean: 0.09799004594180701, zscore_std: 0.1085610555095216}
+      - {name: PW_Cell_Cycle_sv_hit,   beta: -0.17794528890291722,  transform: binary, display: "Cell cycle SV hit"}
+      - {name: PW_Chromatin_zsum,      beta: -0.03768679137824116,  transform: composite_no_zscore, display: "Chromatin remodeling alt.-class composite"}
+      - {name: PW_RTK_RAS_amp_hit,     beta: -0.07489920218302375,  transform: binary, display: "RTK–RAS amplification hit"}
+    msk_partial_hazard_cutoff: 0.985345270579853
+    msk_train_cindex: null
+    notes: >
+      Trained on MSK-CHORD Breast Invasive Ductal Carcinoma (BRCA = IDC).
+      msk_partial_hazard_cutoff is the MSK-derived threshold used for the
+      fixed-cutoff sensitivity row; primary stratification uses cohort-internal
+      rank quantiles.
+
+  LUAD:
+    K: 5
+    hit_count_pathways: [TP53, PI3K, RTK_RAS, Cell_Cycle, Chromatin, DDR, MYC, NOTCH, NRF2]
+    features:
+      - {name: PW_HIT_COUNT,           beta:  0.08623152852858001,  transform: integer_count, display: "All-pathway alteration count"}
+      - {name: PW_TP53_any_rate_z,     beta:  0.10802577709803124,  transform: zscore_msk_train, display: "TP53 any-alteration rate (z)", zscore_mean: 0.1260680034873583, zscore_std: 0.1170473406848421}
+      - {name: PW_NOTCH_any_rate_z,    beta: -0.07991265465222017,  transform: zscore_msk_train, display: "NOTCH any-alteration rate (z)", zscore_mean: 0.027615518744551, zscore_std: 0.0622433492586812}
+      - {name: PW_NRF2_zsum,           beta:  0.11153169994040811,  transform: composite_no_zscore, display: "NRF2 alt.-class composite"}
+      - {name: PW_RTK_RAS_mut_rate_z,  beta: -0.07770157107125727,  transform: zscore_msk_train, display: "RTK–RAS mutation rate (z)", zscore_mean: 0.0346095763302899, zscore_std: 0.0294336706930631}
+    msk_partial_hazard_cutoff: 0.9800001499102232
+
+  PAAD:
+    K: 5
+    hit_count_pathways: [TP53, RTK_RAS, Cell_Cycle, Chromatin, TGF_Beta, MYC, NOTCH, HIPPO]
+    features:
+      - {name: PW_HIT_COUNT,             beta:  0.06920342988949085,  transform: integer_count, display: "All-pathway alteration count"}
+      - {name: PW_RTK_RAS_amp_hit,       beta:  0.2549434141016316,   transform: binary, display: "RTK–RAS amplification hit"}
+      - {name: PW_TP53_mut_rate_z,       beta:  0.05478694862514556,  transform: zscore_msk_train, display: "TP53 mutation rate (z)", zscore_mean: 0.1658894230769231, zscore_std: 0.0942741557081867}
+      - {name: PW_TGF_Beta_any_rate_z,   beta: -0.020956985010307367, transform: zscore_msk_train, display: "TGF-β any-alteration rate (z)", zscore_mean: 0.07448717948717939, zscore_std: 0.1056510989896001}
+      - {name: PW_MYC_any_rate_z,        beta:  0.060290969966127136, transform: zscore_msk_train, display: "MYC any-alteration rate (z)", zscore_mean: 0.0146474358974358, zscore_std: 0.0595458167775394}
+    msk_partial_hazard_cutoff: 0.9711631065500346
+
+  PRAD:
+    K: 4
+    hit_count_pathways: [TP53, PI3K, Cell_Cycle, Chromatin, DDR, WNT]
+    features:
+      - {name: PW_HIT_COUNT,             beta:  0.170726413463327,    transform: integer_count, display: "All-pathway alteration count"}
+      - {name: PW_Chromatin_sv_hit,      beta:  0.35349051682934207,  transform: binary, display: "Chromatin remodeling SV hit"}
+      - {name: PW_Cell_Cycle_zsum,       beta:  0.03694751393294625,  transform: composite_no_zscore, display: "Cell cycle alt.-class composite"}
+      - {name: PW_WNT_zsum,              beta: -0.041635671744958185, transform: composite_no_zscore, display: "Wnt alt.-class composite"}
+    msk_partial_hazard_cutoff: 0.943476160003303
+
+  CRC:
+    K: 5
+    hit_count_pathways: [TP53, RTK_RAS, WNT, TGF_Beta, PI3K, DDR, MYC, Chromatin]
+    features:
+      - {name: PW_HIT_COUNT,              beta:  0.0017846181549948435, transform: integer_count, display: "All-pathway alteration count"}
+      - {name: PW_DDR_zsum,               beta: -0.11581336686061387,   transform: composite_no_zscore, display: "DDR alt.-class composite"}
+      - {name: PW_RTK_RAS_any_rate_z,     beta:  0.036118379303230565,  transform: zscore_msk_train, display: "RTK–RAS any-alteration rate (z)", zscore_mean: 0.0440129927986226, zscore_std: 0.0604518175464659}
+      - {name: PW_TGF_Beta_amp_hit,       beta:  0.7813980789578783,    transform: binary, display: "TGF-β amplification hit"}
+      - {name: PW_Chromatin_any_rate_z,   beta: -0.17962509718283623,   transform: zscore_msk_train, display: "Chromatin remodeling any-alteration rate (z)", zscore_mean: 0.0456177839656163, zscore_std: 0.092997233223395}
+    msk_partial_hazard_cutoff: 1.0786901029340799

@@ -1,0 +1,13 @@
+Local run: macOS, Python 3.13.6, 2026-11-22
+Command: pytest -q --cov=pathwayscore_service --cov-report=term
+
+...............................                                          [100%]
+
+Name                                   Stmts   Miss  Cover
+----------------------------------------------------------
+src/pathwayscore_service/__init__.py       0      0   100%
+src/pathwayscore_service/app.py           40      2    95%
+src/pathwayscore_service/model.py         72      6    92%
+----------------------------------------------------------
+TOTAL                                    112      8    93%
+31 passed in 0.72s

@@ -1,0 +1,10 @@
+{
+  "cancer": "LUAD",
+  "features": {
+    "PW_HIT_COUNT": 3,
+    "PW_TP53_any_rate_raw": 0.12,
+    "PW_NOTCH_any_rate_raw": 0.04,
+    "PW_NRF2_zsum": 0.1,
+    "PW_RTK_RAS_mut_rate_raw": 0.05
+  }
+}

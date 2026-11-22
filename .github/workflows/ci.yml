@@ -1,0 +1,47 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package and test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Run pytest with coverage
+        run: pytest -q --cov=pathwayscore_service --cov-report=term-missing
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start container
+        run: docker compose up -d --build
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - name: Smoke test scoring and validation
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8000/score \
+            -H 'Content-Type: application/json' \
+            --data-binary @examples/luad_synthetic.json | tee score.json
+          python3 -c "import json; r = json.load(open('score.json')); assert abs(r['relative_score'] - 1.230866444) < 1e-6, r"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/score \
+            -H 'Content-Type: application/json' -d '{"cancer":"LUAD","features":{"PW_HIT_COUNT":1}}')
+          test "$code" = "422"
+      - name: Stop container
+        if: always()
+        run: docker compose down
